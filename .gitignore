@@ -1,0 +1,24 @@
+# Build output
+build/
+out/
+target/
+.gradle/
+*.o
+*.obj
+*.exe
+*.pdb
+
+# Conan
+CMakeUserPresets.cmake
+
+# IDE
+.idea/workspace.xml
+.idea/usage.settings.xml
+.vscode/
+
+# Runtime data
+ftp-data/
+
+# Python
+__pycache__/
+*.pyc

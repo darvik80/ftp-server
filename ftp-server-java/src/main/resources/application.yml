@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: ftp-server-java
+
+ftp:
+  port: ${FTP_PORT:2121}
+  root: ${FTP_ROOT:./ftp-data}
