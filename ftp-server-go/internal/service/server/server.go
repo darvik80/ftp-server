@@ -8,6 +8,7 @@ import (
 	"ftp-server-go/internal/config"
 	logger "ftp-server-go/internal/log"
 	"ftp-server-go/internal/service"
+	"ftp-server-go/internal/service/engine"
 	"io"
 	"log/slog"
 	"net"
@@ -26,17 +27,26 @@ const (
 )
 
 type server struct {
-	cfg *config.ServerConfig
+	cfg    *config.ServerConfig
+	engine *engine.Engine
 }
 
 func NewServer(cfg *config.Config) service.Service {
 	return &server{
-		cfg: &cfg.Server,
+		cfg:    &cfg.Server,
+		engine: engine.NewEngine(),
 	}
 }
 
 func (s *server) Name() string {
 	return "ftp-server"
+}
+
+func (s *server) Setup() error {
+	s.engine.RegisterCommand("USER", engine.HandleUSER)
+	s.engine.RegisterCommand("PASS", engine.HandlePASS)
+
+	return nil
 }
 
 func (s *server) Run(ctx context.Context) error {
