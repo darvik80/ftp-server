@@ -28,7 +28,7 @@ const (
 
 type server struct {
 	cfg    *config.ServerConfig
-	engine *engine.Engine
+	engine *engine.engine
 }
 
 func NewServer(cfg *config.Config) service.Service {
