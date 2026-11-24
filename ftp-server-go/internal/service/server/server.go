@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"ftp-server-go/internal/config"
 	logger "ftp-server-go/internal/log"
 	"ftp-server-go/internal/service"
@@ -28,25 +27,18 @@ const (
 
 type server struct {
 	cfg    *config.ServerConfig
-	engine *engine.engine
+	engine engine.Engine
 }
 
-func NewServer(cfg *config.Config) service.Service {
+func NewServer(cfg *config.Config, e engine.Engine) service.Service {
 	return &server{
 		cfg:    &cfg.Server,
-		engine: engine.NewEngine(),
+		engine: e,
 	}
 }
 
 func (s *server) Name() string {
 	return "ftp-server"
-}
-
-func (s *server) Setup() error {
-	s.engine.RegisterCommand("USER", engine.HandleUSER)
-	s.engine.RegisterCommand("PASS", engine.HandlePASS)
-
-	return nil
 }
 
 func (s *server) Run(ctx context.Context) error {
@@ -123,8 +115,11 @@ func (s *server) handleConnection(ctx context.Context, c net.Conn) {
 
 	log.Info("tcp: client connected", slog.String("address", c.RemoteAddr().String()))
 
+	sess := s.engine.OpenSession(c.RemoteAddr().String())
+	s.engine.Greet(sess)
+
 	br := bufio.NewReaderSize(c, 2048)
-	if err := s.reply(c, codeServiceReady, "Service ready"); err != nil {
+	if err := s.reply(c, s.engine.Greet(sess)); err != nil {
 		return
 	}
 
@@ -139,7 +134,10 @@ func (s *server) handleConnection(ctx context.Context, c net.Conn) {
 			var ne net.Error
 			switch {
 			case errors.Is(err, bufio.ErrBufferFull):
-				_ = s.reply(c, codeSyntaxError, "command line too long")
+				_ = s.reply(c, engine.Reply{
+					Code:     engine.FTPCodeSyntaxErrorCommandNotRecognized,
+					Messages: []string{"command line too long"},
+				})
 				log.Warn("ftp: command line too long", slog.Int("bytes", len(line)))
 			case errors.Is(err, io.EOF):
 				log.Info("ftp: client closed the connection")
@@ -155,14 +153,18 @@ func (s *server) handleConnection(ctx context.Context, c net.Conn) {
 
 		cmd := strings.TrimRight(line, "\r\n")
 		if cmd == "" {
-			if err := s.reply(c, codeSyntaxError, "empty command"); err != nil {
+			if err := s.reply(c, engine.Reply{
+				Code:     engine.FTPCodeSyntaxErrorInParameters,
+				Messages: []string{"empty command"},
+			}); err != nil {
 				return
 			}
 			continue
 		}
 
 		log.Debug("ftp: command", slog.String("cmd", cmd))
-		if err := s.reply(c, codeNotImplemented, "command not implemented"); err != nil {
+		d := s.engine.Exec(ctx, sess, cmd)
+		if err := s.reply(c, d.Reply); err != nil {
 			return
 		}
 	}
@@ -177,9 +179,36 @@ func acquire(ctx context.Context, guard chan struct{}) bool {
 	}
 }
 
-func (s *server) reply(w io.Writer, code replyCode, text string) error {
-	if _, err := w.Write(fmt.Appendf(nil, "%d %s\r\n", code, text)); err != nil {
-		return fmt.Errorf("answer %d: %w", code, err)
+func (s *server) reply(w io.Writer, reply engine.Reply) error {
+	var builder strings.Builder
+	code := strconv.Itoa(int(reply.Code))
+	idx := 0
+
+	if len(reply.Messages) > 1 || len(reply.Body) > 0 {
+		for ; idx < len(reply.Messages)-1; idx++ {
+			builder.WriteString(code)
+			builder.WriteString("-")
+			builder.WriteString(reply.Messages[idx])
+			builder.WriteString("\r\n")
+		}
+
+		if len(reply.Body) > 0 {
+			for _, b := range reply.Body {
+				builder.WriteString(" ")
+				builder.WriteString(b)
+				builder.WriteString("\r\n")
+			}
+			builder.WriteString(code)
+			builder.WriteString(" ")
+			builder.WriteString("END")
+		}
+	} else {
+		builder.WriteString(code)
+		builder.WriteString(" ")
+		builder.WriteString(reply.Messages[idx])
 	}
-	return nil
+	builder.WriteString("\r\n")
+
+	_, err := w.Write([]byte(builder.String()))
+	return err
 }

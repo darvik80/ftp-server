@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"ftp-server-go/internal/config"
 	"ftp-server-go/internal/log"
+	"ftp-server-go/internal/service/engine"
+	"ftp-server-go/internal/service/engine/account"
 	"ftp-server-go/internal/service/server"
+	"ftp-server-go/internal/store"
+	"ftp-server-go/internal/store/repository"
 	"os"
 	"os/signal"
 	"syscall"
@@ -37,7 +41,26 @@ func run(ctx context.Context) error {
 	logger.Info("starting server", "version", version, "commit", commit, "date", date)
 	g, gCtx := errgroup.WithContext(ctx)
 
-	s := server.NewServer(cfg)
+	db, err := store.Open(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+
+	accRepo := repository.NewAccountRepository(db)
+	if err := repository.AutoMigrate(ctx, db); err != nil {
+		return fmt.Errorf("auto migrate: %w", err)
+	}
+	acc := account.New(accRepo)
+	for _, a := range cfg.Database.Accounts {
+		if err := acc.Register(ctx, a.Username, a.Password); err != nil {
+			return fmt.Errorf("create account: %w", err)
+		}
+	}
+
+	e := engine.NewDefaultEngine(acc)
+	e.RegisterCommands()
+	s := server.NewServer(cfg, e)
+
 	g.Go(func() error {
 		return s.Run(gCtx)
 	})

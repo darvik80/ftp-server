@@ -25,9 +25,20 @@ type ServerConfig struct {
 	MaxSessions   int    `json:"max_sessions"`
 }
 
+type AccountConfig struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type DatabaseConfig struct {
+	Uri      string          `json:"db_uri"`
+	Accounts []AccountConfig `json:"accounts"`
+}
+
 type Config struct {
-	Server ServerConfig `json:"server"`
-	Logger LoggerConfig `json:"logger"`
+	Server   ServerConfig   `json:"server"`
+	Logger   LoggerConfig   `json:"logger"`
+	Database DatabaseConfig `json:"database"`
 }
 
 func setDefaults() {
@@ -44,6 +55,9 @@ func setDefaults() {
 	viper.SetDefault("logger.console", "spring")
 	viper.SetDefault("logger.console_level", "debug")
 	viper.SetDefault("logger.color", "always")
+
+	// Data
+	viper.SetDefault("database.uri", "data.db")
 }
 
 func LoadConfig() (*Config, error) {

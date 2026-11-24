@@ -1,30 +1,46 @@
 package engine
 
-import "context"
+import (
+	"context"
+	"errors"
+	"ftp-server-go/internal/service/engine/account"
+)
 
-type userKey struct{}
-
-func WithUser(ctx context.Context, user string) context.Context {
-	return context.WithValue(ctx, userKey{}, user)
-}
-
-func UserFromContext(ctx context.Context) string {
-	return ctx.Value(userKey{}).(string)
-}
-
-func HandleUSER(ctx context.Context, args []string) Reply {
-	if len(args) == 0 {
-		return Reply{Code: FTPCodeSyntaxErrorCommandNotRecognized, Messages: []string{"Syntax error, command unrecognized"}}
-	}
-	user := args[0]
-	ctx = WithUser(ctx, user)
-	return Reply{Code: FTPCodeCommandCompleted, Messages: []string{"User name accepted, need password"}}
-}
-
-func HandlePASS(ctx context.Context, args []string) Reply {
-	if len(args) == 0 {
-		return Reply{Code: FTPCodeSyntaxErrorCommandNotRecognized, Messages: []string{"Syntax error, command unrecognized"}}
+func (e *defEngine) handleUSER(ctx context.Context, s *Session, args []string) Reply {
+	if len(args) != 1 {
+		return ReplyByCode(FTPCodeSyntaxErrorCommandNotRecognized)
 	}
 
-	return Reply{Code: FTPCodeCommandCompleted, Messages: []string{"User name accepted, need password"}}
+	s.User = args[0]
+	s.Auth = AuthNeedPass
+
+	return ReplyByCode(FTPCodeNameUserAccepted)
+}
+
+func (e *defEngine) handlePASS(ctx context.Context, s *Session, args []string) Reply {
+	if s.LastCommand != "USER" {
+		return ReplyByCode(FTPCodeIncorrectSequenceOfCommands)
+	}
+	if len(args) != 1 {
+		return ReplyByCode(FTPCodeSyntaxErrorCommandNotRecognized)
+	}
+
+	_, err := e.acc.Authenticate(ctx, s.User, args[0])
+	switch {
+	case errors.Is(err, account.ErrAuthFailed) || errors.Is(err, account.ErrUserNotFound):
+		return ReplyByCode(FTPCodeLoginIncorrect)
+	case err != nil:
+		return ReplyByCode(FTPCodeServiceUnavailable)
+	default:
+	}
+
+	s.Auth = AuthOK
+
+	return ReplyByCode(FTPCodeCommandCompleted)
+}
+
+func (e *defEngine) handleHELP(ctx context.Context, s *Session, args []string) Reply {
+	return Reply{Code: FTPCodeCommandCompleted, Messages: []string{
+		"HELP command",
+	}}
 }

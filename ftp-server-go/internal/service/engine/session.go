@@ -42,4 +42,6 @@ type Session struct {
 
 	Data       *DataEndpoint // последний PORT или PASV
 	RenameFrom string        // путь после RNFR, пока не пришёл RNTO
+
+	LastCommand string
 }
